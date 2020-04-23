@@ -1513,8 +1513,19 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	solAssert(funKind != FunctionType::Kind::BareStaticCall || m_context.evmVersion().hasStaticCall(), "");
 	solAssert(funKind != FunctionType::Kind::BareCallCode, "Callcode has been removed.");
 
+	bool returnSuccessConditionAndReturndata =
+		funKind == FunctionType::Kind::BareCall ||
+		funKind == FunctionType::Kind::BareDelegateCall ||
+		funKind == FunctionType::Kind::BareStaticCall ||
+		funKind == FunctionType::Kind::Send;
 	bool const isDelegateCall = funKind == FunctionType::Kind::BareDelegateCall || funKind == FunctionType::Kind::DelegateCall;
 	bool const useStaticCall = funKind == FunctionType::Kind::BareStaticCall || (funType.stateMutability() <= StateMutability::View && m_context.evmVersion().hasStaticCall());
+
+	if (_functionCall.annotation().tryCall)
+	{
+		solAssert(!returnSuccessConditionAndReturndata, "");
+		solAssert(!funType.isBareCall(), "");
+	}
 
 	ReturnInfo const returnInfo{m_context.evmVersion(), funType};
 
@@ -1529,6 +1540,7 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	string argumentString = argumentStrings.empty() ? ""s : (", " + joinHumanReadable(argumentStrings));
 
 	solUnimplementedAssert(funKind != FunctionType::Kind::ECRecover, "");
+	solUnimplementedAssert(funKind != FunctionType::Kind::RIPEMD160, "");
 
 	if (!m_context.evmVersion().canOverchargeGasForCall())
 	{
@@ -1563,28 +1575,48 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 		)
 
 		let <success> := <call>(<gas>, <address>, <?hasValue> <value>, </hasValue> <pos>, sub(<end>, <pos>), <pos>, <reservedReturnSize>)
-		<?noTryCall>
+		<?revertOnFailure>
 			if iszero(<success>) { <forwardingRevert>() }
-		</noTryCall>
-		<?hasRetVars> let <retVars> </hasRetVars>
-		if <success> {
-			<?dynamicReturnSize>
-				// copy dynamic return data out
-				returndatacopy(<pos>, 0, returndatasize())
-			</dynamicReturnSize>
+		</revertOnFailure>
+		<?+retVars> let <retVars> </+retVars>
+		<?returnSuccessConditionAndReturndata>
+			<?returnReturndata> let <returndataVar> := <extractReturndataFunction>() </returnReturndata>
+		<!returnSuccessConditionAndReturndata>
+			if <success> {
+				<?dynamicReturnSize>
+					// copy dynamic return data out
+					returndatacopy(<pos>, 0, returndatasize())
+				</dynamicReturnSize>
 
-			// update freeMemoryPointer according to dynamic return size
-			mstore(<freeMemoryPointer>, add(<pos>, <roundUp>(<returnSize>)))
+				// update freeMemoryPointer according to dynamic return size
+				mstore(<freeMemoryPointer>, add(<pos>, <roundUp>(<returnSize>)))
 
-			// decode return parameters from external try-call into retVars
-			<?hasRetVars> <retVars> := </hasRetVars> <abiDecode>(<pos>, add(<pos>, <returnSize>))
-		}
+				// decode return parameters from external try-call into retVars
+				<?+retVars> <retVars> := </+retVars> <abiDecode>(<pos>, add(<pos>, <returnSize>))
+			}
+		</returnSuccessConditionAndReturndata>
 	)");
 	templ("pos", m_context.newYulVariable());
 	templ("end", m_context.newYulVariable());
 	templ("bareCall", funType.isBareCall());
+	templ("returnSuccessConditionAndReturndata", returnSuccessConditionAndReturndata);
 	if (_functionCall.annotation().tryCall)
 		templ("success", m_context.trySuccessConditionVariable(_functionCall));
+	else if (returnSuccessConditionAndReturndata)
+	{
+		if (funKind == FunctionType::Kind::Send)
+		{
+			templ("success", IRVariable(_functionCall).name());
+			templ("returnReturndata", false);
+		}
+		else
+		{
+			templ("success", IRVariable(_functionCall).tupleComponent(0).name());
+			templ("returnReturndata", true);
+			templ("returndataVar", IRVariable(_functionCall).tupleComponent(1).name());
+			templ("extractReturndataFunction", m_utils.extractReturndataFunction());
+		}
+	}
 	else
 		templ("success", m_context.newYulVariable());
 	templ("freeMemory", freeMemory());
@@ -1611,17 +1643,19 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 
 	templ("reservedReturnSize", returnInfo.dynamicReturnSize ? "0" : to_string(returnInfo.estimatedReturnSize));
 
-	string const retVars = IRVariable(_functionCall).commaSeparatedList();
-	templ("retVars", retVars);
-	templ("hasRetVars", !retVars.empty());
-	solAssert(retVars.empty() == returnInfo.returnTypes.empty(), "");
+	if (!returnSuccessConditionAndReturndata)
+	{
+		string const retVars = IRVariable(_functionCall).commaSeparatedList();
+		templ("retVars", retVars);
+		solAssert(retVars.empty() == returnInfo.returnTypes.empty(), "");
+	}
 
 	templ("roundUp", m_utils.roundUpFunction());
 	templ("abiDecode", abi.tupleDecoder(returnInfo.returnTypes, true));
 	templ("dynamicReturnSize", returnInfo.dynamicReturnSize);
 	templ("freeMemoryPointer", to_string(CompilerUtils::freeMemoryPointer));
 
-	templ("noTryCall", !_functionCall.annotation().tryCall);
+	templ("revertOnFailure", !_functionCall.annotation().tryCall);
 
 	// If the function takes arbitrary parameters or is a bare call, copy dynamic length data in place.
 	// Move arguments to memory, will not update the free memory pointer (but will update the memory
@@ -1642,10 +1676,6 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	else
 		templ("encodeArgs", abi.tupleEncoder(argumentTypes, funType.parameterTypes(), encodeForLibraryCall));
 	templ("argumentString", argumentString);
-
-	// Output data will replace input data, unless we have ECRecover (then, output
-	// area will be 32 bytes just before input area).
-	solUnimplementedAssert(funKind != FunctionType::Kind::ECRecover, "");
 
 	solAssert(!isDelegateCall || !funType.valueSet(), "Value set for delegatecall");
 	solAssert(!useStaticCall || !funType.valueSet(), "Value set for staticcall");
@@ -1682,9 +1712,6 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 		templ("call", "call");
 
 	templ("forwardingRevert", m_utils.forwardingRevertFunction());
-
-	solUnimplementedAssert(funKind != FunctionType::Kind::RIPEMD160, "");
-	solUnimplementedAssert(funKind != FunctionType::Kind::ECRecover, "");
 
 	m_code << templ.render();
 }
