@@ -122,6 +122,64 @@ string IRGenerationContext::trySuccessConditionVariable(Expression const& _expre
 	return "trySuccessCondition_" + to_string(_expression.id());
 }
 
+map<Arity, set<FunctionDefinition const*>> IRGenerationContext::consumeInternalDispatchMap()
+{
+	map<Arity, set<FunctionDefinition const*>> result = move(m_internalDispatchMap);
+
+	m_internalDispatchTargetCandidates.clear();
+	m_internalDispatchMap.clear();
+
+	solAssert(
+		all_of(result.begin(), result.end(), [](auto const& pair){ return !pair.second.empty(); }),
+		"Internal dispatch function registered even though no functions of the corresponding arity to be dispatched were found"
+	);
+
+	return result;
+}
+
+string IRGenerationContext::registerInternalDispatchTargetCandidate(FunctionDefinition const& _function)
+{
+	Arity arity = functionArity(_function);
+	solAssert(m_internalDispatchMap.count(arity) == 0 || m_internalDispatchTargetCandidates.count(arity) == 0, "");
+
+	if (m_internalDispatchMap.count(arity) == 0)
+	{
+		// We have not had the need to generate a dispatch for this arity yet.
+		// Store the candidate but do not generate code for it just yet.
+		m_internalDispatchTargetCandidates.try_emplace(arity, set<FunctionDefinition const*>{});
+		m_internalDispatchTargetCandidates[arity].insert(&_function);
+	}
+	else
+	{
+		// Dispatch for this arity will be generated so we know we need to generate the function too.
+		m_internalDispatchMap[arity].insert(&_function);
+		enqueueFunctionForCodeGeneration(_function);
+	}
+
+	return internalDispatchFunctionName(arity);
+}
+
+string IRGenerationContext::registerInternalDispatch(Arity const& _arity)
+{
+	solAssert(m_internalDispatchMap.count(_arity) == 0 || m_internalDispatchTargetCandidates.count(_arity) == 0, "");
+
+	if (m_internalDispatchMap.count(_arity) == 0)
+	{
+		if (m_internalDispatchTargetCandidates.count(_arity) > 0)
+		{
+			auto pairIt = m_internalDispatchTargetCandidates.find(_arity);
+			m_internalDispatchMap[_arity] = move(pairIt->second);
+			m_internalDispatchTargetCandidates.erase(pairIt);
+		}
+
+		// We were holding off with adding these candidates to the queue but now we know we need them
+		for (auto const* function: m_internalDispatchMap[_arity])
+			enqueueFunctionForCodeGeneration(*function);
+	}
+
+	return internalDispatchFunctionName(_arity);
+}
+
 Arity IRGenerationContext::functionArity(FunctionDefinition const& _function)
 {
 	FunctionType const* functionType = TypeProvider::function(_function)->asCallableFunction(false);
@@ -142,29 +200,6 @@ string IRGenerationContext::internalDispatchFunctionName(Arity const& _arity)
 	return "dispatch_internal"
 		"_in_" + to_string(_arity.in) +
 		"_out_" + to_string(_arity.out);
-}
-
-string IRGenerationContext::internalDispatch(Arity const& _arity)
-{
-	// UNIMPLEMENTED: Internal library calls via pointers are not implemented yet.
-	// We're not generating code for internal library functions here even though it's possible
-	// to call them via pointers. Right now such calls end up triggering the `default` case in
-	// the switch above.
-	set<FunctionDefinition const*> functions;
-	for (auto const& contract: mostDerivedContract().annotation().linearizedBaseContracts)
-		for (FunctionDefinition const* function: contract->definedFunctions())
-			if (
-				FunctionType const* functionType = TypeProvider::function(*function)->asCallableFunction(false);
-				!function->isConstructor() &&
-				TupleType(functionType->parameterTypes()).sizeOnStack() == _arity.in &&
-				TupleType(functionType->returnParameterTypes()).sizeOnStack() == _arity.out
-			)
-			{
-				functions.insert(function);
-				enqueueFunctionForCodeGeneration(*function);
-			}
-
-	return internalDispatch(functions);
 }
 
 string IRGenerationContext::internalDispatch(set<FunctionDefinition const*> const& _functions)

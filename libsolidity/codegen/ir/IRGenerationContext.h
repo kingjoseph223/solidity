@@ -125,10 +125,15 @@ public:
 
 	std::string newYulVariable();
 
+	std::map<Arity, std::set<FunctionDefinition const*>> consumeInternalDispatchMap();
+	bool internalDispatchClean() const { return m_internalDispatchMap.empty() && m_internalDispatchTargetCandidates.empty(); }
+
+	std::string registerInternalDispatchTargetCandidate(FunctionDefinition const& _function);
+	std::string registerInternalDispatch(Arity const& _arity);
+
 	static Arity functionArity(FunctionDefinition const& _function);
 	static Arity functionArity(FunctionType const& _functionType);
 	static std::string internalDispatchFunctionName(Arity const& _arity);
-	std::string internalDispatch(Arity const& _arity);
 	std::string internalDispatch(std::set<FunctionDefinition const*> const& _functions);
 
 	/// @returns a new copy of the utility function generator (but using the same function set).
@@ -169,6 +174,9 @@ private:
 	/// long as the order of Yul functions in the generated code is deterministic and the same on
 	/// all platforms - which is a property guaranteed by MultiUseYulFunctionCollector.
 	std::set<FunctionDefinition const*> m_functionGenerationQueue;
+
+	std::map<Arity, std::set<FunctionDefinition const*>> m_internalDispatchMap;
+	std::map<Arity, std::set<FunctionDefinition const*>> m_internalDispatchTargetCandidates;
 
 	std::set<ContractDefinition const*, ASTNode::CompareByID> m_subObjects;
 };

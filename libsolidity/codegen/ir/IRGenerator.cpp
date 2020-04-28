@@ -138,6 +138,7 @@ string IRGenerator::generate(
 	t("deploy", deployCode(_contract));
 	generateImplicitConstructors(_contract);
 	generateQueuedFunctions();
+	generateInternalDispatchFunctions();
 	t("functions", m_context.functionCollector().requestedFunctions());
 	t("subObjects", subObjectSources(m_context.subObjectsCreated()));
 
@@ -145,6 +146,7 @@ string IRGenerator::generate(
 	t("RuntimeObject", m_context.runtimeObjectName(_contract));
 	t("dispatch", dispatchRoutine(_contract));
 	generateQueuedFunctions();
+	generateInternalDispatchFunctions();
 	t("runtimeFunctions", m_context.functionCollector().requestedFunctions());
 	t("runtimeSubObjects", subObjectSources(m_context.subObjectsCreated()));
 	return t.render();
@@ -483,6 +485,24 @@ string IRGenerator::dispatchRoutine(ContractDefinition const& _contract)
 	return t.render();
 }
 
+void IRGenerator::generateInternalDispatchFunctions()
+{
+	solAssert(
+		m_context.functionGenerationQueueEmpty(),
+		"If not all functions have been generated yet, the dispatch may be incomplete."
+	);
+
+	for (auto const& [arity, functions]: m_context.consumeInternalDispatchMap())
+		if (!functions.empty())
+			m_context.internalDispatch(functions);
+
+	solAssert(m_context.internalDispatchClean(), "");
+	solAssert(
+		m_context.functionGenerationQueueEmpty(),
+		"Internal dispatch must not add new functions to generation queue because they won't be proeessed"
+	);
+}
+
 string IRGenerator::memoryInit()
 {
 	// This function should be called at the beginning of the EVM call frame
@@ -504,6 +524,10 @@ void IRGenerator::resetContext(ContractDefinition const& _contract)
 	solAssert(
 		m_context.functionCollector().requestedFunctions().empty(),
 		"Reset context while it still had functions."
+	);
+	solAssert(
+		m_context.internalDispatchClean(),
+		"Reset internal dispatch map without consuming it."
 	);
 	m_context = IRGenerationContext(m_evmVersion, m_context.revertStrings(), m_optimiserSettings);
 

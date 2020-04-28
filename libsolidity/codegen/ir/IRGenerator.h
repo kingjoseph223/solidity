@@ -97,6 +97,8 @@ private:
 
 	std::string dispatchRoutine(ContractDefinition const& _contract);
 
+	void generateInternalDispatchFunctions();
+
 	std::string memoryInit();
 
 	void resetContext(ContractDefinition const& _contract);

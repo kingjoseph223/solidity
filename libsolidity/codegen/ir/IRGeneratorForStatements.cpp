@@ -635,15 +635,12 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 				")\n";
 		else
 			define(_functionCall) <<
-				// NOTE: internalDispatch() takes care of adding the function to function generation queue
-				m_context.internalDispatch(Arity{
-					TupleType(functionType->parameterTypes()).sizeOnStack(),
-					TupleType(functionType->returnParameterTypes()).sizeOnStack()
-				}) <<
+				m_context.registerInternalDispatch(m_context.functionArity(*functionType)) <<
 				"(" <<
 				IRVariable(_functionCall.expression()).part("functionIdentifier").name() <<
 				joinHumanReadablePrefixed(args) <<
 				")\n";
+
 		break;
 	}
 	case FunctionType::Kind::External:
@@ -1426,7 +1423,12 @@ void IRGeneratorForStatements::endVisit(Identifier const& _identifier)
 		return;
 	}
 	else if (FunctionDefinition const* functionDef = dynamic_cast<FunctionDefinition const*>(declaration))
-		define(_identifier) << to_string(functionDef->resolveVirtual(m_context.mostDerivedContract()).id()) << "\n";
+	{
+		FunctionDefinition const& resolvedFunctionDef = functionDef->resolveVirtual(m_context.mostDerivedContract());
+		define(_identifier) << to_string(resolvedFunctionDef.id()) << "\n";
+
+		m_context.registerInternalDispatchTargetCandidate(resolvedFunctionDef);
+	}
 	else if (VariableDeclaration const* varDecl = dynamic_cast<VariableDeclaration const*>(declaration))
 		handleVariableReference(*varDecl, _identifier);
 	else if (dynamic_cast<ContractDefinition const*>(declaration))
