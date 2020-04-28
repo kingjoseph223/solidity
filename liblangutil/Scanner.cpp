@@ -267,10 +267,13 @@ bool Scanner::skipWhitespace()
 	return sourcePos() != startPosition;
 }
 
-void Scanner::skipWhitespaceExceptUnicodeLinebreak()
+bool Scanner::skipWhitespaceExceptUnicodeLinebreak()
 {
+	int const startPosition = sourcePos();
 	while (isWhiteSpace(m_char) && !isUnicodeLinebreak())
 		advance();
+	// Return whether or not we skipped any characters.
+	return sourcePos() != startPosition;
 }
 
 Token Scanner::skipSingleLineComment()
@@ -321,7 +324,7 @@ int Scanner::scanSingleLineDocComment()
 		{
 			// Check if next line is also a single-line comment.
 			// If any whitespaces were skipped, use source position before.
-			if (!skipWhitespace())
+			if (!skipWhitespaceExceptUnicodeLinebreak())
 				endPosition = m_source->position();
 
 			if (!m_source->isPastEndOfInput(3) &&
@@ -331,6 +334,11 @@ int Scanner::scanSingleLineDocComment()
 			{
 				addCommentLiteralChar('\n');
 				m_char = m_source->advanceAndGet(3);
+				if (atEndOfLine())
+				{
+					addCommentLiteralChar('\n');
+					continue;
+				}
 			}
 			else
 				break; // next line is not a documentation comment, we are done
