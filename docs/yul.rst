@@ -1029,7 +1029,7 @@ Complete ERC20 Example
     object "Token" {
         code {
             // Store the creator in slot zero.
-            sstore(0, caller())
+            sstore(ownerPos(), caller())
 
             // Deploy the contract
             datacopy(0, dataoffset("runtime"), datasize("runtime"))
