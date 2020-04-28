@@ -122,10 +122,74 @@ string IRGenerationContext::trySuccessConditionVariable(Expression const& _expre
 	return "trySuccessCondition_" + to_string(_expression.id());
 }
 
+Arity IRGenerationContext::functionArity(FunctionDefinition const& _function)
+{
+	FunctionType const* functionType = TypeProvider::function(_function)->asCallableFunction(false);
+	solAssert(functionType, "");
+	return functionArity(*functionType);
+}
+
+Arity IRGenerationContext::functionArity(FunctionType const& _functionType)
+{
+	return {
+		TupleType(_functionType.parameterTypes()).sizeOnStack(),
+		TupleType(_functionType.returnParameterTypes()).sizeOnStack()
+	};
+}
+
+string IRGenerationContext::internalDispatchFunctionName(Arity const& _arity)
+{
+	return "dispatch_internal"
+		"_in_" + to_string(_arity.in) +
+		"_out_" + to_string(_arity.out);
+}
+
 string IRGenerationContext::internalDispatch(Arity const& _arity)
 {
-	string funName = "dispatch_internal_in_" + to_string(_arity.in) + "_out_" + to_string(_arity.out);
-	return m_functions.createFunction(funName, [&]() {
+	// UNIMPLEMENTED: Internal library calls via pointers are not implemented yet.
+	// We're not generating code for internal library functions here even though it's possible
+	// to call them via pointers. Right now such calls end up triggering the `default` case in
+	// the switch above.
+	set<FunctionDefinition const*> functions;
+	for (auto const& contract: mostDerivedContract().annotation().linearizedBaseContracts)
+		for (FunctionDefinition const* function: contract->definedFunctions())
+			if (
+				FunctionType const* functionType = TypeProvider::function(*function)->asCallableFunction(false);
+				!function->isConstructor() &&
+				TupleType(functionType->parameterTypes()).sizeOnStack() == _arity.in &&
+				TupleType(functionType->returnParameterTypes()).sizeOnStack() == _arity.out
+			)
+			{
+				functions.insert(function);
+				enqueueFunctionForCodeGeneration(*function);
+			}
+
+	return internalDispatch(functions);
+}
+
+string IRGenerationContext::internalDispatch(set<FunctionDefinition const*> const& _functions)
+{
+	solAssert(!_functions.empty(), "");
+
+	Arity arity = functionArity(**_functions.begin());
+
+	vector<map<string, string>> cases;
+	for (auto const* function: _functions)
+	{
+		solAssert(function, "");
+		solAssert(functionArity(*function) == arity, "One dispatch function can only handle functions of the same arity");
+		solAssert(!function->isConstructor(), "");
+		// 0 is reserved for uninitialized function pointers
+		solAssert(function->id() != 0, "Unexpected function ID: 0");
+
+		cases.emplace_back(map<string, string>{
+			{"funID", to_string(function->id())},
+			{"name", functionName(*function)}
+		});
+	}
+
+	string funName = internalDispatchFunctionName(arity);
+	return m_functions.createFunction(funName, [&, cases(move(cases))]() {
 		Whiskers templ(R"(
 			function <functionName>(fun <comma> <in>) <arrow> <out> {
 				switch fun
@@ -139,38 +203,13 @@ string IRGenerationContext::internalDispatch(Arity const& _arity)
 			}
 		)");
 		templ("functionName", funName);
-		templ("comma", _arity.in > 0 ? "," : "");
+		templ("comma", arity.in> 0 ? "," : "");
 		YulUtilFunctions utils(m_evmVersion, m_revertStrings, m_functions);
-		templ("in", suffixedVariableNameList("in_", 0, _arity.in));
-		templ("arrow", _arity.out > 0 ? "->" : "");
-		templ("assignment_op", _arity.out > 0 ? ":=" : "");
-		templ("out", suffixedVariableNameList("out_", 0, _arity.out));
-
-		// UNIMPLEMENTED: Internal library calls via pointers are not implemented yet.
-		// We're not generating code for internal library functions here even though it's possible
-		// to call them via pointers. Right now such calls end up triggering the `default` case in
-		// the switch above.
-		vector<map<string, string>> functions;
-		for (auto const& contract: mostDerivedContract().annotation().linearizedBaseContracts)
-			for (FunctionDefinition const* function: contract->definedFunctions())
-				if (
-					FunctionType const* functionType = TypeProvider::function(*function)->asCallableFunction(false);
-					!function->isConstructor() &&
-					TupleType(functionType->parameterTypes()).sizeOnStack() == _arity.in &&
-					TupleType(functionType->returnParameterTypes()).sizeOnStack() == _arity.out
-				)
-				{
-					// 0 is reserved for uninitialized function pointers
-					solAssert(function->id() != 0, "Unexpected function ID: 0");
-
-					functions.emplace_back(map<string, string> {
-						{ "funID", to_string(function->id()) },
-						{ "name", functionName(*function)}
-					});
-
-					enqueueFunctionForCodeGeneration(*function);
-				}
-		templ("cases", move(functions));
+		templ("in", suffixedVariableNameList("in_", 0, arity.in));
+		templ("arrow", arity.out> 0 ? "->" : "");
+		templ("assignment_op", arity.out> 0 ? ":=" : "");
+		templ("out", suffixedVariableNameList("out_", 0, arity.out));
+		templ("cases", move(cases));
 		return templ.render();
 	});
 }

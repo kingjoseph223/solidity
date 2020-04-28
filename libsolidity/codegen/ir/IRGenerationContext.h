@@ -125,7 +125,11 @@ public:
 
 	std::string newYulVariable();
 
+	static Arity functionArity(FunctionDefinition const& _function);
+	static Arity functionArity(FunctionType const& _functionType);
+	static std::string internalDispatchFunctionName(Arity const& _arity);
 	std::string internalDispatch(Arity const& _arity);
+	std::string internalDispatch(std::set<FunctionDefinition const*> const& _functions);
 
 	/// @returns a new copy of the utility function generator (but using the same function set).
 	YulUtilFunctions utils();
