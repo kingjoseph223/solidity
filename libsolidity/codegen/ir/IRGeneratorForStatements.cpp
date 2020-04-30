@@ -743,7 +743,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 
 		TypePointers argumentTypes;
 		TypePointers targetTypes;
-		for (unsigned i = 0; i < arguments.size(); ++i)
+		for (size_t i = 0; i < arguments.size(); ++i)
 		{
 			// ignore selctor
 			if (hasSelectorOrSignature && i == 0)
