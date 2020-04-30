@@ -575,7 +575,10 @@ bool AsmAnalyzer::warnOnInstructions(evmasm::Instruction _instr, SourceLocation 
 	else if (
 		_instr == evmasm::Instruction::JUMP ||
 		_instr == evmasm::Instruction::JUMPI ||
-		_instr == evmasm::Instruction::JUMPDEST
+		_instr == evmasm::Instruction::JUMPDEST ||
+		_instr == evmasm::Instruction::JUMPSUB ||
+		_instr == evmasm::Instruction::RETURNSUB ||
+		_instr == evmasm::Instruction::BEGINSUB
 	)
 	{
 		m_errorReporter.error(

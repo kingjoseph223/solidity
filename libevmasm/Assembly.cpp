@@ -302,10 +302,13 @@ Json::Value Assembly::assemblyJSON(map<string, unsigned> const& _sourceIndices) 
 			));
 			break;
 		case Tag:
+		case Subtag:
 			collection.append(
-				createJsonValue("tag", sourceIndex, i.location().start, i.location().end, toString(i.data())));
+				createJsonValue("tag", sourceIndex, i.location().start, i.location().end, toString(i.data()))
+			);
 			collection.append(
-				createJsonValue("JUMPDEST", sourceIndex, i.location().start, i.location().end));
+				createJsonValue(i.type() == Tag ? "JUMPDEST" : "BEGINSUB", sourceIndex, i.location().start, i.location().end)
+			);
 			break;
 		case PushData:
 			collection.append(createJsonValue("PUSH data", sourceIndex, i.location().start, i.location().end, toStringInHex(i.data())));
@@ -415,12 +418,12 @@ map<u256, u256> Assembly::optimiseInternal(
 	{
 		count = 0;
 
-		if (_settings.runJumpdestRemover)
-		{
-			JumpdestRemover jumpdestOpt{m_items};
-			if (jumpdestOpt.optimise(_tagsReferencedFromOutside))
-				count++;
-		}
+//		if (_settings.runJumpdestRemover)
+//		{
+//			JumpdestRemover jumpdestOpt{m_items};
+//			if (jumpdestOpt.optimise(_tagsReferencedFromOutside))
+//				count++;
+//		}
 
 		if (_settings.runPeephole)
 		{
@@ -682,12 +685,16 @@ LinkerObject const& Assembly::assemble() const
 			ret.bytecode.resize(ret.bytecode.size() + 20);
 			break;
 		case Tag:
+		case Subtag:
 			assertThrow(i.data() != 0, AssemblyException, "Invalid tag position.");
 			assertThrow(i.splitForeignPushTag().first == size_t(-1), AssemblyException, "Foreign tag.");
 			assertThrow(ret.bytecode.size() < 0xffffffffL, AssemblyException, "Tag too large.");
 			assertThrow(m_tagPositionsInBytecode[size_t(i.data())] == size_t(-1), AssemblyException, "Duplicate tag position.");
 			m_tagPositionsInBytecode[size_t(i.data())] = ret.bytecode.size();
-			ret.bytecode.push_back((uint8_t)Instruction::JUMPDEST);
+			if (i.type() == Tag)
+				ret.bytecode.push_back((uint8_t)Instruction::JUMPDEST);
+			else
+				ret.bytecode.push_back((uint8_t)Instruction::BEGINSUB);
 			break;
 		default:
 			assertThrow(false, InvalidOpcode, "Unexpected opcode while assembling.");
@@ -729,8 +736,8 @@ LinkerObject const& Assembly::assemble() const
 			m_subs[subId]->m_tagPositionsInBytecode;
 		assertThrow(tagId < tagPositions.size(), AssemblyException, "Reference to non-existing tag.");
 		size_t pos = tagPositions[tagId];
-		assertThrow(pos != size_t(-1), AssemblyException, "Reference to tag without position.");
-		assertThrow(util::bytesRequired(pos) <= bytesPerTag, AssemblyException, "Tag too large for reserved space.");
+		//assertThrow(pos != size_t(-1), AssemblyException, "Reference to tag without position.");
+		//assertThrow(util::bytesRequired(pos) <= bytesPerTag, AssemblyException, "Tag too large for reserved space.");
 		bytesRef r(ret.bytecode.data() + i.first, bytesPerTag);
 		toBigEndian(pos, r);
 	}

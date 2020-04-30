@@ -268,7 +268,7 @@ void CodeTransform::operator()(FunctionCall const& _call)
 	{
 		m_assembly.setSourceLocation(_call.location);
 		EVMAssembly::LabelID returnLabel(-1); // only used for evm 1.0
-		if (!m_evm15)
+		if (!m_evm15 && !m_dialect.evmVersion().supportsSubroutines())
 		{
 			returnLabel = m_assembly.newLabelId();
 			m_assembly.appendLabelReference(returnLabel);
@@ -284,7 +284,7 @@ void CodeTransform::operator()(FunctionCall const& _call)
 		for (auto const& arg: _call.arguments | boost::adaptors::reversed)
 			visitExpression(arg);
 		m_assembly.setSourceLocation(_call.location);
-		if (m_evm15)
+		if (m_evm15 || m_dialect.evmVersion().supportsSubroutines())
 			m_assembly.appendJumpsub(functionEntryID(_call.functionName.name, *function), function->arguments.size(), function->returns.size());
 		else
 		{
@@ -410,7 +410,7 @@ void CodeTransform::operator()(FunctionDefinition const& _function)
 	m_assembly.setSourceLocation(_function.location);
 	int const stackHeightBefore = m_assembly.stackHeight();
 
-	if (m_evm15)
+	if (m_evm15 || m_dialect.evmVersion().supportsSubroutines())
 		m_assembly.appendBeginsub(functionEntryID(_function.name, function), _function.parameters.size());
 	else
 		m_assembly.appendLabel(functionEntryID(_function.name, function));
@@ -468,7 +468,7 @@ void CodeTransform::operator()(FunctionDefinition const& _function)
 		// This vector holds the desired target positions of all stack slots and is
 		// modified parallel to the actual stack.
 		vector<int> stackLayout;
-		if (!m_evm15)
+		if (!m_evm15 && !m_dialect.evmVersion().supportsSubroutines())
 			stackLayout.push_back(_function.returnVariables.size()); // Move return label to the top
 		stackLayout += vector<int>(_function.parameters.size(), -1); // discard all arguments
 
@@ -504,11 +504,13 @@ void CodeTransform::operator()(FunctionDefinition const& _function)
 				yulAssert(i == stackLayout[i], "Error reshuffling stack.");
 		}
 	}
-	if (m_evm15)
+	if (m_evm15 || m_dialect.evmVersion().supportsSubroutines())
 		m_assembly.appendReturnsub(_function.returnVariables.size(), stackHeightBefore);
 	else
 		m_assembly.appendJump(stackHeightBefore - _function.returnVariables.size());
 	m_assembly.setStackHeight(stackHeightBefore);
+	// TODO add BEGINSUB?
+	// We need to make sure that we did function hoister and move the "main code" to the beginning.
 }
 
 void CodeTransform::operator()(ForLoop const& _forLoop)
