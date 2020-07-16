@@ -49,16 +49,19 @@ def readDependencies(fname):
         for line in o.stdout:
             if line[0] == '\t':
                 library = line.split(' ', 1)[0][1:]
-                if (library.startswith("/usr/local/lib") or
-                        library.startswith("/usr/local/opt") or
-                        library.startswith("/Users/")):
-                    if (os.path.basename(library) != os.path.basename(fname)):
-                        command = "install_name_tool -change " + \
-                            library + " @executable_path/./" + \
-                            os.path.basename(library) + " " + fname
-                        print(command)
-                        os.system("chmod +w " + fname)
-                        os.system(command)
+                if (
+                    (
+                        library.startswith("/usr/local/lib")
+                        or library.startswith("/usr/local/opt")
+                        or library.startswith("/Users/")
+                    )
+                ) and (os.path.basename(library) != os.path.basename(fname)):
+                    command = "install_name_tool -change " + \
+                        library + " @executable_path/./" + \
+                        os.path.basename(library) + " " + fname
+                    print(command)
+                    os.system("chmod +w " + fname)
+                    os.system(command)
 
 root = sys.argv[1]
 for (dirpath, dirnames, filenames) in os.walk(root):
