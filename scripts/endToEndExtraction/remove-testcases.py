@@ -94,7 +94,7 @@ def show_test(name, content, sol_file_path, current_test, test_count):
     checks, sol_checks = get_checks(content, sol_file_path)
 
     if len(checks) == len(sol_checks):
-        for i in range(0, len(checks)):
+        for i in range(len(checks)):
             print(colorize(checks[i].strip(), sol_checks[i].strip(), i))
     else:
         print("warning: check count not matching. this should not happen!")
@@ -109,11 +109,11 @@ def show_test(name, content, sol_file_path, current_test, test_count):
 
 
 def get_tests(e2e_path):
-    tests = []
-    for f in os.listdir(e2e_path):
-        if f.endswith(".sol"):
-            tests.append(f.replace(".sol", ""))
-    return tests
+    return [
+        f.replace(".sol", "")
+        for f in os.listdir(e2e_path)
+        if f.endswith(".sol")
+    ]
 
 
 def process_input_file(e2e_path, input_file, interactive):
@@ -132,14 +132,14 @@ def process_input_file(e2e_path, input_file, interactive):
             inside_test = True
             inside_extracted_test = inside_test & (test_name in tests)
             if inside_extracted_test:
-                count = count + 1
+                count += 1
 
         if interactive and inside_extracted_test:
-            test_content = test_content + line
+            test_content += line
 
         if not inside_extracted_test:
             if line == "\n":
-                new_lines = new_lines + 1
+                new_lines += 1
             else:
                 new_lines = 0
             if not interactive and new_lines <= 1:

@@ -155,7 +155,7 @@ class TraceAnalyser:
         print(len(intersection), "test-cases - ", len(mismatches), " mismatche(s)")
 
     def check_traces(self, test_name, left, right, mismatches):
-        for trace_id in range(0, len(left.traces)):
+        for trace_id in range(len(left.traces)):
             left_trace = left.traces[trace_id]
             right_trace = right.traces[trace_id]
             assert (left_trace.kind == right_trace.kind)
@@ -163,12 +163,9 @@ class TraceAnalyser:
                 mismatch_info = "    " + str(left_trace) + "\n"
                 mismatch_info += "    " + str(right_trace) + "\n"
                 mismatch_info += "    "
-                for ch in range(0, len(str(left_trace))):
+                for ch in range(len(str(left_trace))):
                     if ch < len(str(left_trace)) and ch < len(str(right_trace)):
-                        if str(left_trace)[ch] != str(right_trace)[ch]:
-                            mismatch_info += "|"
-                        else:
-                            mismatch_info += " "
+                        mismatch_info += "|" if str(left_trace)[ch] != str(right_trace)[ch] else " "
                     else:
                         mismatch_info += "|"
                 mismatch_info += "\n"

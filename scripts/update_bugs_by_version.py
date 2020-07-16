@@ -26,14 +26,14 @@ with open(path + '/../Changelog.md') as changelog:
             versions[m.group(1)] = {}
             versions[m.group(1)]['released'] = m.group(2)
 
-for v in versions:
+for v, value in versions.items():
     versions[v]['bugs'] = []
     for bug in bugs:
         if 'introduced' in bug and comp(bug['introduced']) > comp(v):
             continue
         if comp(bug['fixed']) <= comp(v):
             continue
-        versions[v]['bugs'] += [bug['name']]
+        value['bugs'] += [bug['name']]
 
 new_contents = json.dumps(versions, sort_keys=True, indent=4, separators=(',', ': '))
 with open(path + '/../docs/bugs_by_version.json', 'r') as bugs_by_version:

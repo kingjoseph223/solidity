@@ -10,8 +10,7 @@ REPORT_FILE = open("report.txt", mode="w", encoding='utf8', newline='\n')
 
 for optimize in [False, True]:
     for f in sorted(glob.glob("*.sol")):
-        sources = {}
-        sources[f] = {'content': open(f, mode='r', encoding='utf8').read()}
+        sources = {f: {'content': open(f, mode='r', encoding='utf8').read()}}
         input_json = {
             'language': 'Solidity',
             'sources': sources,
